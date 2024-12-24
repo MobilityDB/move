@@ -4,7 +4,7 @@
 # Mandatory items:
 
 [general]
-name=Move
+name=MOVE
 qgisMinimumVersion=3.0
 description=QGIS Plugin to display MobilityDB query results
 version=0.1
@@ -13,8 +13,8 @@ email=maxime.schoemans@ulb.be
 
 about=QGIS Plugin to display MobilityDB query results
 
-tracker=http://github.com/mschoema/move/issues
-repository=http://github.com/mschoema/move
+tracker=http://github.com/MobilityDB/move/issues
+repository=http://github.com/MobilityDB/move
 # End of mandatory metadata
 
 # Recommended items:
@@ -26,11 +26,11 @@ hasProcessingProvider=no
 # Tags are comma separated with spaces allowed
 tags=animation, database, geometry, postgis, time
 
-homepage=http://github.com/mschoema/move
+homepage=http://github.com/MobilityDB/move
 category=Database
 icon=icon.png
 # experimental flag
-experimental=True
+experimental=False
 
 # deprecated flag (applies to the whole plugin, not just a single version)
 deprecated=False
@@ -41,7 +41,7 @@ deprecated=False
 # plugin_dependencies=
 
 Category of the plugin: Raster, Vector, Database or Web
-# category=
+category=Database
 
 # If the plugin can run on QGIS Server.
 server=False
