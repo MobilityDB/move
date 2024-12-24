@@ -1,4 +1,4 @@
-# Move
+# MOVE: Interactive Visual Exploration of Moving Objects
 
 QGIS Plugin to display MobilityDB query results
 
@@ -8,7 +8,6 @@ This plugin allows users to query [MobilityDB](https://github.com/MobilityDB/Mob
 
  - [QGIS](https://www.qgis.org/en/site/)
  - [MobilityDB](https://github.com/MobilityDB/MobilityDB)
- - [Python](https://www.python.org/)
 
 ## Installation steps
 
