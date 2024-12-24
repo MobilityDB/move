@@ -1,4 +1,4 @@
-# MOVE:<br/>Interactive Visual Exploration of Moving Objects
+# <p align=center><ins>MOVE</ins><p><br/>Interactive Visual Exploration of Moving Objects
 
 QGIS Plugin to display MobilityDB query results
 
