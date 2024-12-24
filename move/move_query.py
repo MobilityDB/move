@@ -277,38 +277,25 @@ class MoveQuery:
         ]
         cols = ", ".join(cols)
         if cols:
-            sql = f"""
-            with temp_1 as (
-                {inner_sql}
-            ), temp_2 as (
-                select
-                    {cols},
-                    (st_dump(geometry(shiftTime({self.column_names[col_id]}, 
-                        localtime - (current_time at time zone 'utc')::time), true))).geom as geom
-                from temp_1
-            )
-            select 
-                row_number() over () as id,
-                {cols}, 
-                geom, 
-                to_timestamp(st_m(st_startpoint(geom))) at time zone 'gmt' as start_t,
-                to_timestamp(st_m(st_endpoint(geom))) at time zone 'gmt' as end_t
-            from temp_2"""
-        else:
-            sql = f"""
-            with temp_1 as (
-                {inner_sql}
-            ), temp_2 as (
-                select (st_dump(geometry(shiftTime({self.column_names[col_id]}, 
-                        localtime - (current_time at time zone 'utc')::time), true))).geom as geom
-                from temp_1
-            )
-            select 
-                row_number() over () as id,
-                geom, 
-                to_timestamp(st_m(st_startpoint(geom))) at time zone 'gmt' as start_t,
-                to_timestamp(st_m(st_endpoint(geom))) at time zone 'gmt' as end_t
-            from temp_2"""
+            # add trailing comma if we have additional colums to fetch
+            cols = cols + ", "
+
+        sql = f"""
+        with temp_1 as (
+            {inner_sql}
+        ), temp_2 as (
+            select {cols}
+                geometry(shiftTime({self.column_names[col_id]},
+                    localtime - (current_time at time zone 'utc')::time), false) as geom
+            from temp_1
+        )
+        select 
+            row_number() over () as id,
+            {cols}
+            geom,
+            to_timestamp(st_m(st_startpoint(geom))) at time zone 'gmt' as start_t,
+            to_timestamp(st_m(st_endpoint(geom))) at time zone 'gmt' as end_t
+        from temp_2"""
         return sql
 
     def get_tgeom_select_sql(self, col_id):
