@@ -4,7 +4,7 @@
 # Mandatory items:
 
 [general]
-name=MOVE
+name=MOVE - MobilityDB
 qgisMinimumVersion=3.0
 description=QGIS Plugin to display MobilityDB query results
 version=0.1
