@@ -7,7 +7,7 @@
 name=MOVE - MobilityDB
 qgisMinimumVersion=3.0
 description=QGIS Plugin to display MobilityDB query results
-version=0.1
+version=@MOVE_VERSION@
 author=MobilityDB
 email=maxime.schoemans@ulb.be
 

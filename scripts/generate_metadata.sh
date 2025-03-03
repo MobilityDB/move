@@ -5,7 +5,7 @@
 VERSION=${1:-"0.0.0-dev"}
 
 # Path to template and output files (accounting for script being in scripts/ directory)
-TEMPLATE_PATH="$(dirname "$0")/../metadata.txt.in"
+TEMPLATE_PATH="$(dirname "$0")/../metadata.in.txt"
 OUTPUT_PATH="$(dirname "$0")/../metadata.txt"
 
 # Check if template exists
