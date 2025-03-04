@@ -1,2 +1,3 @@
 pb_tool
+pyqt5-tools
 setuptools  # Required for distutils in Python 3.12+
