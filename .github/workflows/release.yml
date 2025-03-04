@@ -53,13 +53,15 @@ jobs:
 
     - name: Rename plugin package
       run: |
-        mv zip_build/move.zip move-${{ env.VERSION }}.zip
+        cd zip_build
+        mv move move-${{ env.VERSION }}
+        zip -r move-${{ env.VERSION }}.zip move-${{ env.VERSION }}
 
     - name: Upload plugin package to release
       if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true')
       uses: softprops/action-gh-release@v1
       with:
-        files: move-${{ env.VERSION }}.zip
+        files: zip_build/move-${{ env.VERSION }}.zip
         tag_name: ${{ github.event_name == 'push' && github.ref || format('test-v{0}', github.event.inputs.test_version) }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -68,4 +70,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: move-${{ env.VERSION }}
-        path: move-${{ env.VERSION }}.zip
+        path: zip_build/move-${{ env.VERSION }}
