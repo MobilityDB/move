@@ -48,7 +48,7 @@ jobs:
 
     - name: Build plugin package
       run: |
-        pbt clean
+        pbt clean -y
         pbt zip
 
     - name: Rename plugin package
