@@ -59,7 +59,7 @@ jobs:
 
     - name: Upload plugin package to release
       if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true')
-      uses: softprops/action-gh-release@v2
+      uses: softprops/action-gh-release@v0.1.8
       with:
         files: zip_build/move-${{ env.VERSION }}.zip
         tag_name: ${{ github.event_name == 'push' && github.ref || format('test-v{0}', github.event.inputs.test_version) }}
