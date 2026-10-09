@@ -30,6 +30,10 @@ TGEOM_CASTS = {
     'tgeography': '::geometry',
 }
 TEMPORAL_TYPES = list(TPOINT_CASTS) + TCIRCLE_TYPES + list(TGEOM_CASTS)
+# Number of segments of a linear sequence held by one feature of a temporal
+# point layer, which bounds both the number of features of the layer and the
+# number of vertices the map interpolates for each of them in a frame
+TPOINT_CHUNK_SEGMENTS = 32
 
 
 class MoveQuery:
@@ -322,22 +326,32 @@ class MoveQuery:
         if cols:
             # add trailing comma if we have additional colums to fetch
             cols = cols + ", "
-        # The segment coordinates are read from tgeompoint values, and from
-        # the center and radius of tcbuffer values
+        # The coordinates are read from tgeompoint values, and from the center
+        # and radius of tcbuffer values
         col_type = self.column_types[col_id]
         cast = TPOINT_CASTS.get(col_type, "")
         if col_type in TCIRCLE_TYPES:
-            start_point, end_point = "point(startValue(move_seg))", "point(endValue(move_seg))"
-            radius_cols = """
-            radius(startValue(move_seg)) as move_r0,
-            radius(endValue(move_seg)) as move_r1,"""
+            point = "point(getValue(move_inst))"
+            radius_col = """
+            st_astext(st_makeline(case when cardinality(move_radii) = 1
+                then move_radii || move_radii else move_radii end)) as move_radius,"""
+            radius_agg = """,
+                    array_agg(st_makepointm(radius(getValue(move_inst)), 0, move_m)
+                        order by move_m) as move_radii"""
+            radius_sel = ", move_radii"
         else:
-            start_point, end_point = "startValue(move_seg)", "endValue(move_seg)"
-            radius_cols = ""
+            point = "getValue(move_inst)"
+            radius_col = ""
+            radius_agg = ""
+            radius_sel = ""
 
-        # One row per segment, from its start value at move_start_t to its end
-        # value at move_end_t; a step segment has equal start and end values and an
-        # instant is a segment with equal start and end timestamps
+        # One row per piece of each sequence: a chunk of at most
+        # TPOINT_CHUNK_SEGMENTS segments of a linear sequence, a segment of a
+        # step sequence, or an instant. Its geometry is the line through the
+        # instants of the piece whose M is the number of seconds since the
+        # start of the piece, and a chunk includes the timestamp it shares
+        # with the next chunk only as the first one of the next chunk
+        n = TPOINT_CHUNK_SEGMENTS
         sql = f"""
         with temp_1 as (
             {inner_sql}
@@ -348,23 +362,58 @@ class MoveQuery:
             from temp_1
         ), temp_3 as (
             select {cols}
-                unnest(case when tempSubtype(move_tpoint) = 'Instant'
-                    then array[move_tpoint] else segments(move_tpoint) end) as move_seg
+                unnest(case
+                    when tempSubtype(move_tpoint) = 'Instant' then array[move_tpoint]
+                    when interp(move_tpoint) = 'Discrete' then segments(move_tpoint)
+                    else sequences(move_tpoint) end) as move_seq
             from temp_2
+        ), temp_4 as (
+            select {cols}
+                move_seq as move_piece,
+                true as move_lower_inc,
+                true as move_upper_inc
+            from temp_3
+            where numInstants(move_seq) = 1
+            union all
+            select {cols}
+                move_piece,
+                lowerInc(move_piece::tstzspan),
+                upperInc(move_piece::tstzspan)
+            from temp_3, unnest(segments(move_seq)) as move_piece
+            where numInstants(move_seq) > 1 and interp(move_seq) = 'Step'
+            union all
+            select {cols}
+                atTime(move_seq, span(timestampN(move_seq, {n} * move_k + 1),
+                    timestampN(move_seq, least({n} * move_k + {n + 1}, move_n)),
+                    true, true)),
+                move_k > 0 or lowerInc(move_seq::tstzspan),
+                move_k = (move_n - 2) / {n} and upperInc(move_seq::tstzspan)
+            from temp_3, numInstants(move_seq) as move_n,
+                generate_series(0, (move_n - 2) / {n}) as move_k
+            where move_n > 1 and interp(move_seq) <> 'Step'
+        ), temp_5 as (
+            select {cols}
+                move_piece, move_lower_inc, move_upper_inc, move_points{radius_sel}
+            from temp_4, lateral (
+                select
+                    array_agg(st_makepointm(st_x({point}), st_y({point}), move_m)
+                        order by move_m) as move_points{radius_agg}
+                from unnest(instants(move_piece)) as move_inst,
+                    extract(epoch from getTimestamp(move_inst)
+                        - startTimestamp(move_piece)) as move_m
+            ) as move_vertices
         )
         select
             row_number() over () as move_id,
             {cols}
-            st_makeline({start_point}, {end_point}) as move_geom,
-            st_x({start_point}) as move_x0,
-            st_y({start_point}) as move_y0,
-            st_x({end_point}) as move_x1,
-            st_y({end_point}) as move_y1,{radius_cols}
-            startTimestamp(move_seg) at time zone 'gmt' as move_start_t,
-            endTimestamp(move_seg) at time zone 'gmt' as move_end_t,
-            lowerInc(move_seg::tstzspan) as move_lower_inc,
-            upperInc(move_seg::tstzspan) as move_upper_inc
-        from temp_3"""
+            st_setsrid(st_makeline(case when cardinality(move_points) = 1
+                then move_points || move_points else move_points end),
+                SRID(move_piece)) as move_geom,{radius_col}
+            startTimestamp(move_piece) at time zone 'gmt' as move_start_t,
+            endTimestamp(move_piece) at time zone 'gmt' as move_end_t,
+            move_lower_inc,
+            move_upper_inc
+        from temp_5"""
         return sql
 
     def get_tgeom_select_sql(self, col_id):

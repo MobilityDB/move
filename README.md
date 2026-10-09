@@ -6,7 +6,7 @@ This plugin allows users to query [MobilityDB](https://github.com/MobilityDB/Mob
 
 ## Prerequisites
 
- - [QGIS](https://www.qgis.org/en/site/) 3.22 or later
+ - [QGIS](https://www.qgis.org/en/site/) 3.40 or later
  - [MobilityDB](https://github.com/MobilityDB/MobilityDB)
 
 ## Installation steps
@@ -83,11 +83,11 @@ MobilityDB *tgeompoint*, *tgeogpoint*, *tnpoint* or *tcbuffer* columns will resu
 These layers are marked as temporal, and can be explored using the temporal controller in QGIS. (View->Panels->Temporal Controller Panel)  
 For a fluid animation, set the step to a small interval and the frame rate to 60.
 
-Each layer holds one feature per segment of the temporal points, and draws each point at its position at the end of the current frame of the temporal controller.
-The position is interpolated linearly between the start and end values of the segment, so a *tgeogpoint* moves along the straight line in longitude and latitude between two instants rather than along the great circle.
+Each layer holds one feature per chunk of at most 32 segments of a sequence of the temporal points, one per segment of a sequence with step interpolation, and one per instant, and draws each point at its position at the end of the current frame of the temporal controller.
+The position is interpolated linearly between the two instants of the chunk around the frame, so a *tgeogpoint* moves along the straight line in longitude and latitude between two instants rather than along the great circle.
 An instant, or a sequence reduced to one instant, is drawn while the frame contains it.
 A *tnpoint* is drawn through its conversion to a *tgeompoint*, which follows its route.
-A *tcbuffer* is drawn as the circle around its center, its center and radius interpolated linearly between the start and end values of the segment.
+A *tcbuffer* is drawn as the circle around its center, its center and radius interpolated linearly between the two instants around the frame.
 
 #### MobilityDB temporal geometries
 
