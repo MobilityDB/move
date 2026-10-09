@@ -81,6 +81,16 @@
        </widget>
       </item>
       <item>
+       <widget class="QCheckBox" name="checkbox_fast_preview">
+        <property name="toolTip">
+         <string>Draw the temporal points of the next query directly on the map canvas instead of as layers: a faster animation, without a layer in the layer tree, identify, selection, attribute table or print layout.</string>
+        </property>
+        <property name="text">
+         <string>Fast preview</string>
+        </property>
+       </widget>
+      </item>
+      <item>
        <spacer name="horizontalSpacer">
         <property name="orientation">
          <enum>Qt::Horizontal</enum>
