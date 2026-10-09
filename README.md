@@ -6,7 +6,7 @@ This plugin allows users to query [MobilityDB](https://github.com/MobilityDB/Mob
 
 ## Prerequisites
 
- - [QGIS](https://www.qgis.org/en/site/)
+ - [QGIS](https://www.qgis.org/en/site/) 3.22 or later
  - [MobilityDB](https://github.com/MobilityDB/MobilityDB)
 
 ## Installation steps
@@ -77,6 +77,10 @@ PostGIS geometry columns create up to three layers depending on the geometry typ
 MobilityDB *tgeompoint* or *tgeogpoint* columns will result in a QGIS layer each.  
 These layers are marked as temporal, and can be explored using the temporal controller in QGIS. (View->Panels->Temporal Controller Panel)  
 For a fluid animation, set the step to a small interval and the frame rate to 60.
+
+Each layer holds one feature per segment of the temporal points, and draws each point at its position at the end of the current frame of the temporal controller.
+The position is interpolated linearly between the start and end values of the segment, so a *tgeogpoint* moves along the straight line in longitude and latitude between two instants rather than along the great circle.
+An instant, or a sequence reduced to one instant, is drawn while the frame contains it.
 
 ### Refresh Layers
 

@@ -430,7 +430,7 @@ class Move:
                           QgsDataSourceUri.SslDisable)
         uri.setDataSource("public", view_name, "geom", "", "id")
         uri.setSrid(str(params['srid']))
-        uri.setWkbType(QgsWkbTypes.LineStringM)
+        uri.setWkbType(QgsWkbTypes.LineString)
         layer_name = query.column_names[params['col_id']]
         layer = self.iface.addVectorLayer(uri.uri(), layer_name, "postgres")
         if not layer or not layer.isValid():
@@ -439,11 +439,24 @@ class Move:
             layer.setCustomProperty('move/view_name', view_name)
             layer.setCustomProperty('move/sql', query.raw_sql)
             layer.temporalProperties().setIsActive(True)
+            layer.temporalProperties().setLimitMode(
+                Qgis.VectorTemporalLimitMode.IncludeBeginIncludeEnd)
+            # The point of a segment at the map time, interpolated linearly
+            # between its start and end values within the bounds of the
+            # segment; an instant is drawn while the map time range contains it
             pointGeneratorLayer = QgsGeometryGeneratorSymbolLayer.create({
                 'SymbolType':
                 'Marker',
                 'geometryModifier':
-                'line_interpolate_point(\n  $geometry,\n  1.0 * (\n    ( epoch(@map_end_time)/1000 )\n    - m(start_point($geometry))\n  ) / (\n    m(end_point($geometry))\n    - m(start_point($geometry))\n  )\n  * length($geometry)\n) '
+                'with_variable(\'t\', epoch(@map_end_time),\n'
+                '  if("end_t" = "start_t",\n'
+                '    make_point("x0", "y0"),\n'
+                '    if((@t > epoch("start_t") or ("lower_inc" and @t = epoch("start_t")))\n'
+                '        and (@t < epoch("end_t") or ("upper_inc" and @t = epoch("end_t"))),\n'
+                '      with_variable(\'f\',\n'
+                '        (@t - epoch("start_t")) / (epoch("end_t") - epoch("start_t")),\n'
+                '        make_point("x0" + ("x1" - "x0") * @f, "y0" + ("y1" - "y0") * @f)),\n'
+                '      NULL)))'
             })
             layer.renderer().symbol().changeSymbolLayer(0, pointGeneratorLayer)
             layer.triggerRepaint()

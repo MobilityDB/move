@@ -5,7 +5,7 @@
 
 [general]
 name=MOVE - MobilityDB
-qgisMinimumVersion=3.0
+qgisMinimumVersion=3.22
 description=QGIS Plugin to display MobilityDB query results
 version=@MOVE_VERSION@
 author=MobilityDB
