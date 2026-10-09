@@ -35,7 +35,9 @@ TEMPORAL_TYPES = list(TPOINT_CASTS) + TCIRCLE_TYPES + list(TGEOM_CASTS)
 class MoveQuery:
     def __init__(self, raw_sql):
         super(MoveQuery, self).__init__()
-        self.id = uuid.uuid4().hex
+        # Short enough for the views and their indexes to keep their names
+        # within the 63 bytes of a PostgreSQL identifier
+        self.id = uuid.uuid4().hex[:12]
         self.raw_sql = raw_sql
         self.is_valid = True
         self.parse_raw_query()
@@ -168,9 +170,9 @@ class MoveQuery:
     def has_temp_columns(self):
         return len(self.temp_cols()) > 0
 
-    def create_geom_view(self, project_title, db):
+    def create_geom_view(self, project_id, db):
         select_sql = self.get_geom_select_sql()
-        view_name = f"move_{project_title}_geom_{self.id}"
+        view_name = f"move_{project_id}_geom_{self.id}"
         sql = f"create materialized view {view_name} as ({select_sql})"
         analyze_sql = f"analyze {view_name}"
         geom_cols = self.geom_cols()
@@ -206,13 +208,13 @@ class MoveQuery:
                 conn.commit()
         return view_name, col_names, srids, geom_types
 
-    def create_temporal_view(self, project_title, db, col_id):
+    def create_temporal_view(self, project_id, db, col_id):
         if self.column_types[col_id] in TGEOM_CASTS:
             select_sql = self.get_tgeom_select_sql(col_id)
-            view_name = f"move_{project_title}_tgeom_{str(col_id)}_{self.id}"
+            view_name = f"move_{project_id}_tgeom_{str(col_id)}_{self.id}"
         else:
             select_sql = self.get_tpoint_select_sql(col_id)
-            view_name = f"move_{project_title}_tpoint_{str(col_id)}_{self.id}"
+            view_name = f"move_{project_id}_tpoint_{str(col_id)}_{self.id}"
         sql = f"create materialized view {view_name} as ({select_sql})"
         col_name = self.column_names[col_id]
         srid_sql = f"select st_srid(geom) from {view_name} limit 1"
