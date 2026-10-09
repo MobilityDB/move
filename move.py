@@ -316,7 +316,8 @@ class Move:
             return
         self.dockwidget.button_refresh.setEnabled(False)
         layer_name = layer.customProperty('move/view_name')
-        select_sql = f"refresh materialized view {layer_name};"
+        schema = layer.customProperty('move/schema', 'public')
+        select_sql = f'refresh materialized view "{schema}"."{layer_name}";'
 
         def run(task):
             with psycopg.connect(
@@ -350,8 +351,9 @@ class Move:
     # Drop unused materialized views
     def clean(self):
         select_sql = f"""
-            select 'drop materialized view ' || relname || ';'
-            from pg_class
+            select 'drop materialized view ' || quote_ident(nspname) || '.'
+                || quote_ident(relname) || ';'
+            from pg_class join pg_namespace on pg_namespace.oid = relnamespace
             where relkind = 'm'
             and relname like 'move@_{self.project_id}@_%' escape '@'
         """
@@ -435,7 +437,7 @@ class Move:
                 uri.setConnection(db['host'], db['port'], db['database'],
                                   db['username'], db['password'],
                                   QgsDataSourceUri.SslDisable)
-                uri.setDataSource("public", view_name, col_names[i], "", "move_id")
+                uri.setDataSource(params['schema'], view_name, col_names[i], "", "move_id")
                 uri.setSrid(str(srids[i]))
                 uri.setWkbType(QgsWkbTypes.parseType(col_type))
                 layer_name = col_names[i]
@@ -444,6 +446,7 @@ class Move:
                 if not layer or not layer.isValid():
                     self.msg("Layer failed to load!")
                 else:
+                    layer.setCustomProperty('move/schema', params['schema'])
                     layer.setCustomProperty('move/view_name', view_name)
                     layer.setCustomProperty('move/sql', query.raw_sql)
 
@@ -453,7 +456,7 @@ class Move:
         uri.setConnection(db['host'], db['port'], db['database'],
                           db['username'], db['password'],
                           QgsDataSourceUri.SslDisable)
-        uri.setDataSource("public", view_name, "move_geom", "", "move_id")
+        uri.setDataSource(params['schema'], view_name, "move_geom", "", "move_id")
         uri.setSrid(str(params['srid']))
         uri.setWkbType(QgsWkbTypes.LineString)
         layer_name = query.column_names[params['col_id']]
@@ -461,6 +464,7 @@ class Move:
         if not layer or not layer.isValid():
             self.msg("Layer failed to load!")
         else:
+            layer.setCustomProperty('move/schema', params['schema'])
             layer.setCustomProperty('move/view_name', view_name)
             layer.setCustomProperty('move/sql', query.raw_sql)
             self.set_temporal_fields(layer)
@@ -502,7 +506,7 @@ class Move:
         uri.setConnection(db['host'], db['port'], db['database'],
                           db['username'], db['password'],
                           QgsDataSourceUri.SslDisable)
-        uri.setDataSource("public", view_name, "move_geom")
+        uri.setDataSource(params['schema'], view_name, "move_geom")
         uri.setKeyColumn("move_id")
         uri.setSrid(str(params['srid']))
         layer_name = query.column_names[params['col_id']]
@@ -515,6 +519,7 @@ class Move:
                 self.log(
                     f"Failed to load layer {layer_name} from view {view_name}")
             else:
+                layer.setCustomProperty('move/schema', params['schema'])
                 layer.setCustomProperty('move/view_name', view_name)
                 layer.setCustomProperty('move/sql', query.raw_sql)
                 self.set_temporal_fields(layer)

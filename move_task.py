@@ -30,9 +30,10 @@ class MoveGeomTask(MoveTask):
 
     def run(self):
         try:
-            view_name, col_names, srids, geom_types = self.query.create_geom_view(
+            schema, view_name, col_names, srids, geom_types = self.query.create_geom_view(
                 self.project_id, self.db)
             self.result_params = {
+                'schema': schema,
                 'view_name': view_name,
                 'col_names': col_names,
                 'srids': srids,
@@ -56,9 +57,10 @@ class MoveTTask(MoveTask):
 
     def run(self):
         try:
-            view_name, srid, geom_types = self.query.create_temporal_view(
+            schema, view_name, srid, geom_types = self.query.create_temporal_view(
                 self.project_id, self.db, self.col_id)
             self.result_params = {
+                'schema': schema,
                 'col_id': self.col_id,
                 'view_name': view_name,
                 'srid': srid,
