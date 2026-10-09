@@ -82,6 +82,11 @@ Each layer holds one feature per segment of the temporal points, and draws each 
 The position is interpolated linearly between the start and end values of the segment, so a *tgeogpoint* moves along the straight line in longitude and latitude between two instants rather than along the great circle.
 An instant, or a sequence reduced to one instant, is drawn while the frame contains it.
 
+#### MobilityDB temporal geometries
+
+MobilityDB *tgeometry* columns create up to three temporal layers, one per type of geometry the values take, like PostGIS geometry columns: *MultiPoint*, *MultiLineString* and *MultiPolygon*.
+Each layer holds one feature per segment of the temporal geometries, carrying the value of the segment from its start to its end, and the temporal controller shows each value in every frame that overlaps the time the value holds.
+
 ### Refresh Layers
 
 The layers are related to the query that created them, but they are not updated automatically when the initial tables used in the query are updated. Running the *Refresh Layers* button will refresh the layers by re-executing the queries that created them.

@@ -56,12 +56,13 @@ class MoveTTask(MoveTask):
 
     def run(self):
         try:
-            view_name, srid = self.query.create_temporal_view(
+            view_name, srid, geom_types = self.query.create_temporal_view(
                 self.project_title, self.db, self.col_id)
             self.result_params = {
                 'col_id': self.col_id,
                 'view_name': view_name,
-                'srid': srid
+                'srid': srid,
+                'geom_types': geom_types
             }
         except psycopg.Error as e:
             self.error_msg = e.diag.message_primary

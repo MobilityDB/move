@@ -2,6 +2,18 @@ import psycopg
 import uuid
 
 
+# The layer type of a PostGIS geometry type, None when no layer shows it
+def geom_type_family(geom_type):
+    geom_type = geom_type.lower()
+    if geom_type in ['point', 'multipoint']:
+        return 'multipoint'
+    if geom_type in ['linestring', 'multilinestring']:
+        return 'multilinestring'
+    if geom_type in ['polygon', 'multipolygon']:
+        return 'multipolygon'
+    return None
+
+
 class MoveQuery:
     def __init__(self, raw_sql):
         super(MoveQuery, self).__init__()
@@ -165,12 +177,9 @@ class MoveQuery:
                     col_geom_types = set()
                     for srid, geom_type in res:
                         col_srids.add(srid)
-                        if geom_type.lower() in ['point', 'multipoint']:
-                            col_geom_types.add('multipoint')
-                        elif geom_type.lower() in ['linestring', 'multilinestring']:
-                            col_geom_types.add('multilinestring')
-                        elif geom_type.lower() in ['polygon', 'multipolygon']:
-                            col_geom_types.add('multipolygon')
+                        family = geom_type_family(geom_type)
+                        if family:
+                            col_geom_types.add(family)
                     if len(col_srids) > 1:
                         raise ValueError(f"Geometry column {col_name} has multiple SRIDS: {str(col_srids)}")
                     elif len(col_geom_types) == 0:
@@ -190,11 +199,13 @@ class MoveQuery:
         sql = f"create materialized view {view_name} as ({select_sql})"
         col_name = self.column_names[col_id]
         srid_sql = f"select st_srid(geom) from {view_name} limit 1"
+        types_sql = f"select distinct geometrytype(geom) from {view_name}"
         analyze_sql = f"analyze {view_name}"
         startt_idx_sql = f"create index {view_name}_startt_idx on {view_name} (start_t)"
         endt_idx_sql = f"create index {view_name}_endt_idx on {view_name} (end_t)"
         geom_idx_sql = f"create index {view_name}_geom_idx on {view_name} using spgist (geom)"
         srid = None
+        geom_types = set()
         with psycopg.connect(
                 host=db['host'],
                 port=db['port'],
@@ -205,12 +216,17 @@ class MoveQuery:
                 cur.execute(sql)
                 cur.execute(srid_sql)
                 srid = cur.fetchone()[0]
+                cur.execute(types_sql)
+                for geom_type, in cur.fetchall():
+                    family = geom_type_family(geom_type)
+                    if family:
+                        geom_types.add(family)
                 cur.execute(analyze_sql)
                 cur.execute(startt_idx_sql)
                 cur.execute(endt_idx_sql)
                 cur.execute(geom_idx_sql)
                 conn.commit()
-        return view_name, srid
+        return view_name, srid, geom_types
 
     def get_full_sql(self):
         sql_parts = []
@@ -319,11 +335,10 @@ class MoveQuery:
         if self.has_with:
             sql_parts.append(self.with_sql)
         sql_parts.append(self.select_sql)
-        inner_cols = ["row_number() over () as tgeom_id"]
-        inner_cols.extend([
+        inner_cols = [
             col for i, col in enumerate(self.columns_sql)
             if i in self.other_cols() or i == col_id
-        ])
+        ]
         sql_parts.append(", ".join(inner_cols))
         sql_parts.append(self.from_sql)
         sql_parts.append(self.rest_sql)
@@ -337,56 +352,32 @@ class MoveQuery:
         ]
         cols = ", ".join(cols)
         if cols:
-            sql = f"""
-            with tracks as (
-                {inner_sql}
-            ), insts as (
-                select
-                    tgeom_id,
-                    {cols},
-                    unnest(instants(shiftTime({self.column_names[col_id]}, 
-                        localtime - (current_time at time zone 'utc')::time))) as inst
+            # add trailing comma if we have additional colums to fetch
+            cols = cols + ", "
+
+        # One row per segment, holding the value of the segment from start_t
+        # to end_t; an instant is a segment with equal start and end timestamps
+        sql = f"""
+        with tracks as (
+            {inner_sql}
+        ), segs as (
+            select {cols}
+                unnest(case when tempSubtype(tgeom) = 'Instant'
+                    then array[tgeom] else segments(tgeom) end) as seg
+            from (
+                select {cols}
+                    shiftTime({self.column_names[col_id]},
+                        localtime - (current_time at time zone 'utc')::time) as tgeom
                 from tracks
-            ), pairs as (
-                select 
-                    row_number() over () as id, 
-                    tgeom_id, 
-                    {cols}, 
-                    getTimestamp(inst) as t, 
-                    getValue(inst) as geom 
-                from insts
-            ) 
-            select 
-                id,
-                {cols}, 
-                geom, 
-                t at time zone 'gmt' as start_t, 
-                lead(t) over (partition by tgeom_id order by t) at time zone 'gmt' as end_t 
-            from pairs"""
-        else:
-            sql = f"""
-            with tracks as (
-                {inner_sql}
-            ), insts as (
-                select
-                    tgeom_id,
-                    unnest(instants(shiftTime({self.column_names[col_id]}, 
-                        localtime - (current_time at time zone 'utc')::time))) as inst
-                from tracks
-            ), pairs as (
-                select 
-                    row_number() over () as id, 
-                    tgeom_id, 
-                    getTimestamp(inst) as t, 
-                    getValue(inst) as geom 
-                from insts
-            ) 
-            select 
-                id,
-                geom, 
-                t at time zone 'gmt' as start_t, 
-                lead(t) over (partition by tgeom_id order by t) at time zone 'gmt' as end_t 
-            from pairs"""
+            ) shifted
+        )
+        select
+            row_number() over () as id,
+            {cols}
+            startValue(seg) as geom,
+            startTimestamp(seg) at time zone 'gmt' as start_t,
+            endTimestamp(seg) at time zone 'gmt' as end_t
+        from segs"""
         return sql
 
     def __str__(self):
