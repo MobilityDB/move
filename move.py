@@ -53,6 +53,7 @@ from .move_query import TCIRCLE_TYPES
 from .move_query import TGEOM_CASTS
 from .move_task import MoveGeomTask
 from .move_task import MoveTTask
+from .move_trajectory_item import MoveTrajectoryItem
 
 
 class Move:
@@ -94,6 +95,9 @@ class Move:
 
         self.pluginIsActive = False
         self.dockwidget = None
+        # Fast preview canvas items by the name of the view they draw, each
+        # with the name of its query column
+        self._fast_items = {}
 
     # noinspection PyMethodMayBeStatic
     def tr(self, message):
@@ -203,6 +207,8 @@ class Move:
             self.onDbChanged)
         self.dockwidget.button_execute.clicked.disconnect(self.execute)
         self.dockwidget.button_refresh.clicked.disconnect(self.refresh)
+        QgsProject.instance().cleared.disconnect(self.clean_fast_items)
+        self.clean_fast_items()
 
         # remove this statement if dockwidget is to remain
         # for reuse if plugin is reopened
@@ -246,6 +252,7 @@ class Move:
                 self.onDbChanged)
             self.dockwidget.button_execute.clicked.connect(self.execute)
             self.dockwidget.button_refresh.clicked.connect(self.refresh)
+            QgsProject.instance().cleared.connect(self.clean_fast_items)
 
             self.setDatabaseComboBox()
 
@@ -350,6 +357,9 @@ class Move:
 
     # Drop unused materialized views
     def clean(self):
+        # The Fast preview items of the previous query hold their data in
+        # memory, so their views are dropped with the other unused ones
+        self.clean_fast_items()
         select_sql = f"""
             select 'drop materialized view ' || quote_ident(nspname) || '.'
                 || quote_ident(relname) || ';'
@@ -461,13 +471,18 @@ class Move:
             if (layer.customProperty('move/view_name') or '').endswith(
                 f"_{query.id}")
         ]
-        if not layers:
+        items = [
+            (name, item) for view_name, (name, item) in self._fast_items.items()
+            if view_name.endswith(f"_{query.id}")
+        ]
+        if not layers and not items:
             self.msg("The query created no layer", Qgis.Warning)
             return
-        names = ", ".join(
-            f"{layer.name()} ({layer.featureCount()} features)"
-            for layer in layers)
-        self.msg(f"The query created {len(layers)} layers: {names}",
+        names = [f"{layer.name()} ({layer.featureCount()} features)"
+                 for layer in layers]
+        names += [f"{name} (Fast preview, {item.piece_count()} pieces)"
+                  for name, item in items]
+        self.msg(f"The query created {len(names)} layers: {', '.join(names)}",
                  Qgis.Success)
 
     def raise_error(self, msg):
@@ -505,6 +520,18 @@ class Move:
 
     def add_tpoint_layer(self, db, query, params):
         view_name = params['view_name']
+        if self.fast_preview_enabled():
+            name = query.column_names[params['col_id']]
+            try:
+                item = MoveTrajectoryItem(
+                    self.iface.mapCanvas(), db, params['schema'], view_name,
+                    params['srid'],
+                    query.column_types[params['col_id']] in TCIRCLE_TYPES)
+            except NotImplementedError as e:
+                self.msg(f"{e}: {name} is drawn as a layer", Qgis.Warning)
+            else:
+                self._fast_items[view_name] = (name, item)
+                return
         uri = QgsDataSourceUri()
         uri.setConnection(db['host'], db['port'], db['database'],
                           db['username'], db['password'],
@@ -583,6 +610,17 @@ class Move:
 
     # The layers of temporal columns hold each value from move_start_t to
     # move_end_t
+    # Whether the temporal points of a query are drawn by Fast preview items
+    # rather than layers
+    def fast_preview_enabled(self):
+        cb = getattr(self.dockwidget, 'checkbox_fast_preview', None)
+        return bool(cb and cb.isChecked())
+
+    def clean_fast_items(self):
+        for name, item in self._fast_items.values():
+            item.cleanup()
+        self._fast_items = {}
+
     def set_temporal_fields(self, layer):
         properties = layer.temporalProperties()
         properties.setIsActive(True)

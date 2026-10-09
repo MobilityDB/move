@@ -29,12 +29,13 @@ pbt deploy -y
 
 The plugin has a simple interface that can be opened using Database->Move->Open Move Interface, or using the button in the top toolbar.
 
-When opened, the plugin is displayed as a widget at the bottom of the QGIS window, and it has 4 elements:
+When opened, the plugin is displayed as a widget at the bottom of the QGIS window, and it has 5 elements:
 
  1. A combobox to select the database to use.
  2. A textbox to write SQL SELECT queries.
  3. An *Execute Query* button.
  4. A *Refresh Layer* button.
+ 5. A *Fast preview* checkbox.
 
 ![Plugin Interface](img/plugin_interface.png "Plugin Interface")
 
@@ -93,6 +94,14 @@ A *tcbuffer* is drawn as the circle around its center, its center and radius int
 
 MobilityDB *tgeometry* or *tgeography* columns create up to three temporal layers, one per type of geometry the values take, like PostGIS geometry columns: *MultiPoint*, *MultiLineString* and *MultiPolygon*.
 Each layer holds one feature per segment of the temporal geometries, carrying the value of the segment from its start to its end, and the temporal controller shows each value in every frame that overlaps the time the value holds.
+
+### Fast preview
+
+With *Fast preview* checked, the temporal point columns of the next executed query (*tgeompoint*, *tgeogpoint*, *tnpoint* and *tcbuffer*) are not loaded as layers: the plugin reads their materialized view once into memory and draws the points directly on the map canvas at each frame of the temporal controller, at the same positions as the layer would, without a map render job.
+On 5000 trajectories of 1230 instants each, a frame takes about 17 ms to compute and draw, against about 190 ms for the layer.
+The points have no layer in the layers panel, so they cannot be identified, selected, styled, listed in an attribute table or printed in a layout, and they are not saved with the project; executing another query removes them.
+They follow the CRS of the map canvas, except for a *tcbuffer*, which Fast preview draws only when the canvas is in the CRS of its data and otherwise loads as a layer.
+Temporal geometry columns are always loaded as layers.
 
 ### Refresh Layer
 
