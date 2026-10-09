@@ -217,12 +217,12 @@ class MoveQuery:
             view_name = f"move_{project_id}_tpoint_{str(col_id)}_{self.id}"
         sql = f"create materialized view {view_name} as ({select_sql})"
         col_name = self.column_names[col_id]
-        srid_sql = f"select st_srid(geom) from {view_name} limit 1"
-        types_sql = f"select distinct geometrytype(geom) from {view_name}"
+        srid_sql = f"select st_srid(move_geom) from {view_name} limit 1"
+        types_sql = f"select distinct geometrytype(move_geom) from {view_name}"
         analyze_sql = f"analyze {view_name}"
-        startt_idx_sql = f"create index {view_name}_startt_idx on {view_name} (start_t)"
-        endt_idx_sql = f"create index {view_name}_endt_idx on {view_name} (end_t)"
-        geom_idx_sql = f"create index {view_name}_geom_idx on {view_name} using spgist (geom)"
+        startt_idx_sql = f"create index {view_name}_startt_idx on {view_name} (move_start_t)"
+        endt_idx_sql = f"create index {view_name}_endt_idx on {view_name} (move_end_t)"
+        geom_idx_sql = f"create index {view_name}_geom_idx on {view_name} using spgist (move_geom)"
         srid = None
         geom_types = set()
         with psycopg.connect(
@@ -277,7 +277,7 @@ class MoveQuery:
         if self.has_with:
             sql_parts.append(self.with_sql)
         sql_parts.append(self.select_sql)
-        cols = ['row_number() over () as id']
+        cols = ['row_number() over () as move_id']
         cols.extend([
             col for i, col in enumerate(self.columns_sql)
             if i in self.other_cols() or i in self.geom_cols()
@@ -319,16 +319,16 @@ class MoveQuery:
         col_type = self.column_types[col_id]
         cast = TPOINT_CASTS.get(col_type, "")
         if col_type in TCIRCLE_TYPES:
-            start_point, end_point = "point(startValue(seg))", "point(endValue(seg))"
+            start_point, end_point = "point(startValue(move_seg))", "point(endValue(move_seg))"
             radius_cols = """
-            radius(startValue(seg)) as r0,
-            radius(endValue(seg)) as r1,"""
+            radius(startValue(move_seg)) as move_r0,
+            radius(endValue(move_seg)) as move_r1,"""
         else:
-            start_point, end_point = "startValue(seg)", "endValue(seg)"
+            start_point, end_point = "startValue(move_seg)", "endValue(move_seg)"
             radius_cols = ""
 
-        # One row per segment, from its start value at start_t to its end
-        # value at end_t; a step segment has equal start and end values and an
+        # One row per segment, from its start value at move_start_t to its end
+        # value at move_end_t; a step segment has equal start and end values and an
         # instant is a segment with equal start and end timestamps
         sql = f"""
         with temp_1 as (
@@ -336,26 +336,26 @@ class MoveQuery:
         ), temp_2 as (
             select {cols}
                 shiftTime({self.column_names[col_id]},
-                    localtime - (current_time at time zone 'utc')::time){cast} as tpoint
+                    localtime - (current_time at time zone 'utc')::time){cast} as move_tpoint
             from temp_1
         ), temp_3 as (
             select {cols}
-                unnest(case when tempSubtype(tpoint) = 'Instant'
-                    then array[tpoint] else segments(tpoint) end) as seg
+                unnest(case when tempSubtype(move_tpoint) = 'Instant'
+                    then array[move_tpoint] else segments(move_tpoint) end) as move_seg
             from temp_2
         )
         select
-            row_number() over () as id,
+            row_number() over () as move_id,
             {cols}
-            st_makeline({start_point}, {end_point}) as geom,
-            st_x({start_point}) as x0,
-            st_y({start_point}) as y0,
-            st_x({end_point}) as x1,
-            st_y({end_point}) as y1,{radius_cols}
-            startTimestamp(seg) at time zone 'gmt' as start_t,
-            endTimestamp(seg) at time zone 'gmt' as end_t,
-            lowerInc(seg::tstzspan) as lower_inc,
-            upperInc(seg::tstzspan) as upper_inc
+            st_makeline({start_point}, {end_point}) as move_geom,
+            st_x({start_point}) as move_x0,
+            st_y({start_point}) as move_y0,
+            st_x({end_point}) as move_x1,
+            st_y({end_point}) as move_y1,{radius_cols}
+            startTimestamp(move_seg) at time zone 'gmt' as move_start_t,
+            endTimestamp(move_seg) at time zone 'gmt' as move_end_t,
+            lowerInc(move_seg::tstzspan) as move_lower_inc,
+            upperInc(move_seg::tstzspan) as move_upper_inc
         from temp_3"""
         return sql
 
@@ -384,28 +384,28 @@ class MoveQuery:
             # add trailing comma if we have additional colums to fetch
             cols = cols + ", "
 
-        # One row per segment, holding the value of the segment from start_t
-        # to end_t; an instant is a segment with equal start and end timestamps
+        # One row per segment, holding the value of the segment from move_start_t
+        # to move_end_t; an instant is a segment with equal start and end timestamps
         sql = f"""
         with tracks as (
             {inner_sql}
         ), segs as (
             select {cols}
-                unnest(case when tempSubtype(tgeom) = 'Instant'
-                    then array[tgeom] else segments(tgeom) end) as seg
+                unnest(case when tempSubtype(move_tgeom) = 'Instant'
+                    then array[move_tgeom] else segments(move_tgeom) end) as move_seg
             from (
                 select {cols}
                     shiftTime({self.column_names[col_id]},
-                        localtime - (current_time at time zone 'utc')::time) as tgeom
+                        localtime - (current_time at time zone 'utc')::time) as move_tgeom
                 from tracks
             ) shifted
         )
         select
-            row_number() over () as id,
+            row_number() over () as move_id,
             {cols}
-            startValue(seg){TGEOM_CASTS[self.column_types[col_id]]} as geom,
-            startTimestamp(seg) at time zone 'gmt' as start_t,
-            endTimestamp(seg) at time zone 'gmt' as end_t
+            startValue(move_seg){TGEOM_CASTS[self.column_types[col_id]]} as move_geom,
+            startTimestamp(move_seg) at time zone 'gmt' as move_start_t,
+            endTimestamp(move_seg) at time zone 'gmt' as move_end_t
         from segs"""
         return sql
 

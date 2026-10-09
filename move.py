@@ -36,6 +36,7 @@ from qgis.core import QgsMessageLog
 from qgis.core import QgsProject
 from qgis.core import QgsTask
 from qgis.core import QgsVectorLayer
+from qgis.core import QgsVectorLayerTemporalProperties
 from qgis.core import QgsWkbTypes
 
 # Initialize Qt resources from file resources.py
@@ -434,7 +435,7 @@ class Move:
                 uri.setConnection(db['host'], db['port'], db['database'],
                                   db['username'], db['password'],
                                   QgsDataSourceUri.SslDisable)
-                uri.setDataSource("public", view_name, col_names[i], "", "id")
+                uri.setDataSource("public", view_name, col_names[i], "", "move_id")
                 uri.setSrid(str(srids[i]))
                 uri.setWkbType(QgsWkbTypes.parseType(col_type))
                 layer_name = col_names[i]
@@ -452,7 +453,7 @@ class Move:
         uri.setConnection(db['host'], db['port'], db['database'],
                           db['username'], db['password'],
                           QgsDataSourceUri.SslDisable)
-        uri.setDataSource("public", view_name, "geom", "", "id")
+        uri.setDataSource("public", view_name, "move_geom", "", "move_id")
         uri.setSrid(str(params['srid']))
         uri.setWkbType(QgsWkbTypes.LineString)
         layer_name = query.column_names[params['col_id']]
@@ -462,7 +463,7 @@ class Move:
         else:
             layer.setCustomProperty('move/view_name', view_name)
             layer.setCustomProperty('move/sql', query.raw_sql)
-            layer.temporalProperties().setIsActive(True)
+            self.set_temporal_fields(layer)
             layer.temporalProperties().setLimitMode(
                 Qgis.VectorTemporalLimitMode.IncludeBeginIncludeEnd)
             # The point of a segment at the map time, interpolated linearly
@@ -470,24 +471,24 @@ class Move:
             # segment; an instant is drawn while the map time range contains
             # it; a tcbuffer is the circle around the point with the radius
             # interpolated in the same way
-            instant = 'make_point("x0", "y0")'
-            moving = 'make_point("x0" + ("x1" - "x0") * @f, "y0" + ("y1" - "y0") * @f)'
+            instant = 'make_point("move_x0", "move_y0")'
+            moving = 'make_point("move_x0" + ("move_x1" - "move_x0") * @f, "move_y0" + ("move_y1" - "move_y0") * @f)'
             symbol_type = 'Marker'
             if query.column_types[params['col_id']] in TCIRCLE_TYPES:
-                instant = f'buffer({instant}, "r0")'
-                moving = f'buffer({moving}, "r0" + ("r1" - "r0") * @f)'
+                instant = f'buffer({instant}, "move_r0")'
+                moving = f'buffer({moving}, "move_r0" + ("move_r1" - "move_r0") * @f)'
                 symbol_type = 'Fill'
             pointGeneratorLayer = QgsGeometryGeneratorSymbolLayer.create({
                 'SymbolType':
                 symbol_type,
                 'geometryModifier':
                 'with_variable(\'t\', epoch(@map_end_time),\n'
-                '  if("end_t" = "start_t",\n'
+                '  if("move_end_t" = "move_start_t",\n'
                 f'    {instant},\n'
-                '    if((@t > epoch("start_t") or ("lower_inc" and @t = epoch("start_t")))\n'
-                '        and (@t < epoch("end_t") or ("upper_inc" and @t = epoch("end_t"))),\n'
+                '    if((@t > epoch("move_start_t") or ("move_lower_inc" and @t = epoch("move_start_t")))\n'
+                '        and (@t < epoch("move_end_t") or ("move_upper_inc" and @t = epoch("move_end_t"))),\n'
                 '      with_variable(\'f\',\n'
-                '        (@t - epoch("start_t")) / (epoch("end_t") - epoch("start_t")),\n'
+                '        (@t - epoch("move_start_t")) / (epoch("move_end_t") - epoch("move_start_t")),\n'
                 f'        {moving}),\n'
                 '      NULL)))'
             })
@@ -501,8 +502,8 @@ class Move:
         uri.setConnection(db['host'], db['port'], db['database'],
                           db['username'], db['password'],
                           QgsDataSourceUri.SslDisable)
-        uri.setDataSource("public", view_name, "geom")
-        uri.setKeyColumn("id")
+        uri.setDataSource("public", view_name, "move_geom")
+        uri.setKeyColumn("move_id")
         uri.setSrid(str(params['srid']))
         layer_name = query.column_names[params['col_id']]
         # One layer per geometry type the values of the column take
@@ -516,7 +517,17 @@ class Move:
             else:
                 layer.setCustomProperty('move/view_name', view_name)
                 layer.setCustomProperty('move/sql', query.raw_sql)
-                layer.temporalProperties().setIsActive(True)
+                self.set_temporal_fields(layer)
+
+    # The layers of temporal columns hold each value from move_start_t to
+    # move_end_t
+    def set_temporal_fields(self, layer):
+        properties = layer.temporalProperties()
+        properties.setIsActive(True)
+        properties.setMode(
+            QgsVectorLayerTemporalProperties.ModeFeatureDateTimeStartAndEndFromFields)
+        properties.setStartField('move_start_t')
+        properties.setEndField('move_end_t')
 
     def msg(self, msg):
         self.iface.messageBar().pushMessage(msg, level=Qgis.Info, duration=3)
