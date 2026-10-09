@@ -295,10 +295,15 @@ class Move:
         view_names_string = ", ".join(view_name_strings)
         return view_names_string
 
-    # Refresh materialized views of existing layers
+    # Refresh the materialized view of the active layer, then redraw the
+    # layers read from it, found as #get_layer_view_names finds them and
+    # repainted as #add_tpoint_layer repaints its layer
     def refresh(self):
+        layer = self.iface.activeLayer()
+        if layer is None:
+            return
         self.dockwidget.button_refresh.setEnabled(False)
-        layer_name = self.iface.activeLayer().customProperty('move/view_name')
+        layer_name = layer.customProperty('move/view_name')
         select_sql = f"refresh materialized view {layer_name};"
 
         def run(task):
@@ -312,10 +317,16 @@ class Move:
                     cur.execute(select_sql)
                     conn.commit()
 
+        # Mirrors the redraw of #add_tpoint_layer for the layers of the view,
+        # whose rendering the map canvas otherwise keeps
         def completed(exception):
             self.dockwidget.button_refresh.setEnabled(True)
             if exception is not None:
                 self.log(f"Exception: {exception}")
+                return
+            for project_layer in QgsProject.instance().mapLayers().values():
+                if project_layer.customProperty('move/view_name') == layer_name:
+                    project_layer.triggerRepaint()
 
         if layer_name is not None:
             task = QgsTask.fromFunction(

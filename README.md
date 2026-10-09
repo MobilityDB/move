@@ -34,7 +34,7 @@ When opened, the plugin is displayed as a widget at the bottom of the QGIS windo
  1. A combobox to select the database to use.
  2. A textbox to write SQL SELECT queries.
  3. An *Execute Query* button.
- 4. A *Refresh Layers* button.
+ 4. A *Refresh Layer* button.
 
 ![Plugin Interface](img/plugin_interface.png "Plugin Interface")
 
@@ -89,9 +89,9 @@ A *tcbuffer* is drawn as the circle around its center, its center and radius int
 MobilityDB *tgeometry* or *tgeography* columns create up to three temporal layers, one per type of geometry the values take, like PostGIS geometry columns: *MultiPoint*, *MultiLineString* and *MultiPolygon*.
 Each layer holds one feature per segment of the temporal geometries, carrying the value of the segment from its start to its end, and the temporal controller shows each value in every frame that overlaps the time the value holds.
 
-### Refresh Layers
+### Refresh Layer
 
-The layers are related to the query that created them, but they are not updated automatically when the initial tables used in the query are updated. Running the *Refresh Layers* button will refresh the layers by re-executing the queries that created them.
+The layers are related to the query that created them, but they are not updated automatically when the initial tables used in the query are updated. The *Refresh Layer* button refreshes the layer selected in the layers panel by re-executing the query that created it, and redraws the layers created from the same query column.
 
 ## Issues and ideas
 
