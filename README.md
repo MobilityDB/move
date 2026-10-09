@@ -34,7 +34,7 @@ When opened, the plugin is displayed as a widget at the bottom of the QGIS windo
  1. A combobox to select the database to use.
  2. A textbox to write SQL SELECT queries.
  3. An *Execute Query* button.
- 4. A *Refresh Layers* button.
+ 4. A *Refresh Layer* button.
 
 ![Plugin Interface](img/plugin_interface.png "Plugin Interface")
 
@@ -82,9 +82,9 @@ Each layer holds one feature per segment of the temporal points, and draws each 
 The position is interpolated linearly between the start and end values of the segment, so a *tgeogpoint* moves along the straight line in longitude and latitude between two instants rather than along the great circle.
 An instant, or a sequence reduced to one instant, is drawn while the frame contains it.
 
-### Refresh Layers
+### Refresh Layer
 
-The layers are related to the query that created them, but they are not updated automatically when the initial tables used in the query are updated. Running the *Refresh Layers* button will refresh the layers by re-executing the queries that created them.
+The layers are related to the query that created them, but they are not updated automatically when the initial tables used in the query are updated. The *Refresh Layer* button refreshes the layer selected in the layers panel by re-executing the query that created it, and redraws the layers created from the same query column.
 
 ## Issues and ideas
 
