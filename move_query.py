@@ -279,25 +279,39 @@ class MoveQuery:
         if cols:
             # add trailing comma if we have additional colums to fetch
             cols = cols + ", "
-        # geometry(tgeompoint, boolean) has no tgeogpoint variant
+        # The segment coordinates are read from tgeompoint values
         cast = "::tgeompoint" if self.column_types[col_id] == 'tgeogpoint' else ""
 
+        # One row per segment, from its start value at start_t to its end
+        # value at end_t; a step segment has equal start and end values and an
+        # instant is a segment with equal start and end timestamps
         sql = f"""
         with temp_1 as (
             {inner_sql}
         ), temp_2 as (
             select {cols}
-                geometry(shiftTime({self.column_names[col_id]},
-                    localtime - (current_time at time zone 'utc')::time){cast}, false) as geom
+                shiftTime({self.column_names[col_id]},
+                    localtime - (current_time at time zone 'utc')::time){cast} as tpoint
             from temp_1
+        ), temp_3 as (
+            select {cols}
+                unnest(case when tempSubtype(tpoint) = 'Instant'
+                    then array[tpoint] else segments(tpoint) end) as seg
+            from temp_2
         )
-        select 
+        select
             row_number() over () as id,
             {cols}
-            geom,
-            to_timestamp(st_m(st_startpoint(geom))) at time zone 'gmt' as start_t,
-            to_timestamp(st_m(st_endpoint(geom))) at time zone 'gmt' as end_t
-        from temp_2"""
+            st_makeline(startValue(seg), endValue(seg)) as geom,
+            st_x(startValue(seg)) as x0,
+            st_y(startValue(seg)) as y0,
+            st_x(endValue(seg)) as x1,
+            st_y(endValue(seg)) as y1,
+            startTimestamp(seg) at time zone 'gmt' as start_t,
+            endTimestamp(seg) at time zone 'gmt' as end_t,
+            lowerInc(seg::tstzspan) as lower_inc,
+            upperInc(seg::tstzspan) as upper_inc
+        from temp_3"""
         return sql
 
     def get_tgeom_select_sql(self, col_id):
