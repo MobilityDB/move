@@ -511,7 +511,9 @@ class Move:
                           QgsDataSourceUri.SslDisable)
         uri.setDataSource(params['schema'], view_name, "move_geom", "", "move_id")
         uri.setSrid(str(params['srid']))
-        uri.setWkbType(QgsWkbTypes.LineString)
+        uri.setWkbType(QgsWkbTypes.LineStringM)
+        # The extent comes from the statistics of the view, not a scan of it
+        uri.setUseEstimatedMetadata(True)
         layer_name = query.column_names[params['col_id']]
         layer = self.iface.addVectorLayer(uri.uri(), layer_name, "postgres")
         if not layer or not layer.isValid():
@@ -523,31 +525,32 @@ class Move:
             self.set_temporal_fields(layer)
             layer.temporalProperties().setLimitMode(
                 Qgis.VectorTemporalLimitMode.IncludeBeginIncludeEnd)
-            # The point of a segment at the map time, interpolated linearly
-            # between its start and end values within the bounds of the
-            # segment; an instant is drawn while the map time range contains
-            # it; a tcbuffer is the circle around the point with the radius
-            # interpolated in the same way
-            instant = 'make_point("move_x0", "move_y0")'
-            moving = 'make_point("move_x0" + ("move_x1" - "move_x0") * @f, "move_y0" + ("move_y1" - "move_y0") * @f)'
+            # The point of a piece at the map time, interpolated by M, the
+            # seconds since the start of the piece, within the bounds of the
+            # piece; an instant is drawn while the map time range contains
+            # it; a tcbuffer is the circle around the point whose radius is
+            # interpolated by M in the same way
+            instant = 'start_point($geometry)'
+            moving = 'line_interpolate_point_by_m($geometry, @t)'
             symbol_type = 'Marker'
             if query.column_types[params['col_id']] in TCIRCLE_TYPES:
-                instant = f'buffer({instant}, "move_r0")'
-                moving = f'buffer({moving}, "move_r0" + ("move_r1" - "move_r0") * @f)'
+                instant = (f'buffer({instant}, '
+                           'x(start_point(geom_from_wkt("move_radius"))))')
+                moving = (f'buffer({moving}, x(line_interpolate_point_by_m('
+                          'geom_from_wkt("move_radius"), @t)))')
                 symbol_type = 'Fill'
             pointGeneratorLayer = QgsGeometryGeneratorSymbolLayer.create({
                 'SymbolType':
                 symbol_type,
                 'geometryModifier':
-                'with_variable(\'t\', epoch(@map_end_time),\n'
-                '  if("move_end_t" = "move_start_t",\n'
-                f'    {instant},\n'
-                '    if((@t > epoch("move_start_t") or ("move_lower_inc" and @t = epoch("move_start_t")))\n'
-                '        and (@t < epoch("move_end_t") or ("move_upper_inc" and @t = epoch("move_end_t"))),\n'
-                '      with_variable(\'f\',\n'
-                '        (@t - epoch("move_start_t")) / (epoch("move_end_t") - epoch("move_start_t")),\n'
-                f'        {moving}),\n'
-                '      NULL)))'
+                'with_variable(\'t\', (epoch(@map_end_time) - epoch("move_start_t")) / 1000,\n'
+                '  with_variable(\'d\', (epoch("move_end_t") - epoch("move_start_t")) / 1000,\n'
+                '    if(@d = 0,\n'
+                f'      {instant},\n'
+                '      if((@t > 0 or ("move_lower_inc" and @t = 0))\n'
+                '          and (@t < @d or ("move_upper_inc" and @t = @d)),\n'
+                f'        {moving},\n'
+                '        NULL))))'
             })
             layer.renderer().symbol().changeSymbolLayer(0, pointGeneratorLayer)
             layer.triggerRepaint()
