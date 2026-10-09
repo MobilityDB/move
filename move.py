@@ -471,16 +471,19 @@ class Move:
         uri.setDataSource("public", view_name, "geom")
         uri.setKeyColumn("id")
         uri.setSrid(str(params['srid']))
-        uri.setWkbType(QgsWkbTypes.Polygon)
         layer_name = query.column_names[params['col_id']]
-        layer = self.iface.addVectorLayer(uri.uri(), layer_name, "postgres")
-        if not layer or not layer.isValid():
-            self.log(
-                f"Failed to load layer {layer_name} from view {view_name}")
-        else:
-            layer.setCustomProperty('move/view_name', view_name)
-            layer.setCustomProperty('move/sql', query.raw_sql)
-            layer.temporalProperties().setIsActive(True)
+        # One layer per geometry type the values of the column take
+        for geom_type in sorted(params['geom_types']):
+            uri.setWkbType(QgsWkbTypes.parseType(geom_type))
+            layer = self.iface.addVectorLayer(uri.uri(), layer_name,
+                                              "postgres")
+            if not layer or not layer.isValid():
+                self.log(
+                    f"Failed to load layer {layer_name} from view {view_name}")
+            else:
+                layer.setCustomProperty('move/view_name', view_name)
+                layer.setCustomProperty('move/sql', query.raw_sql)
+                layer.temporalProperties().setIsActive(True)
 
     def msg(self, msg):
         self.iface.messageBar().pushMessage(msg, level=Qgis.Info, duration=3)
