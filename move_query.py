@@ -279,6 +279,8 @@ class MoveQuery:
         if cols:
             # add trailing comma if we have additional colums to fetch
             cols = cols + ", "
+        # geometry(tgeompoint, boolean) has no tgeogpoint variant
+        cast = "::tgeompoint" if self.column_types[col_id] == 'tgeogpoint' else ""
 
         sql = f"""
         with temp_1 as (
@@ -286,7 +288,7 @@ class MoveQuery:
         ), temp_2 as (
             select {cols}
                 geometry(shiftTime({self.column_names[col_id]},
-                    localtime - (current_time at time zone 'utc')::time), false) as geom
+                    localtime - (current_time at time zone 'utc')::time){cast}, false) as geom
             from temp_1
         )
         select 
