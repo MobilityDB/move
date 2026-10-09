@@ -14,6 +14,24 @@ def geom_type_family(geom_type):
     return None
 
 
+# Temporal types drawn as a moving point, with the cast to tgeompoint that
+# gives their coordinates
+TPOINT_CASTS = {
+    'tgeompoint': '',
+    'tgeogpoint': '::tgeompoint',
+    'tnpoint': '::tgeompoint',
+}
+# Temporal type drawn as a moving circle
+TCIRCLE_TYPES = ['tcbuffer']
+# Temporal types drawn as the geometry they hold, with the cast to geometry
+# of their values
+TGEOM_CASTS = {
+    'tgeometry': '',
+    'tgeography': '::geometry',
+}
+TEMPORAL_TYPES = list(TPOINT_CASTS) + TCIRCLE_TYPES + list(TGEOM_CASTS)
+
+
 class MoveQuery:
     def __init__(self, raw_sql):
         super(MoveQuery, self).__init__()
@@ -138,12 +156,11 @@ class MoveQuery:
         return self.get_column_ids_by_type(['geometry', 'geography'])
 
     def temp_cols(self):
-        return self.get_column_ids_by_type(
-            ['tgeompoint', 'tgeogpoint', 'tgeometry'])
+        return self.get_column_ids_by_type(TEMPORAL_TYPES)
 
     def other_cols(self):
         return self.get_column_ids_by_type(
-            ['geometry', 'geography', 'tgeompoint', 'tgeogpoint', 'tgeometry'], False)
+            ['geometry', 'geography'] + TEMPORAL_TYPES, False)
 
     def has_geom_columns(self):
         return len(self.geom_cols()) > 0
@@ -190,7 +207,7 @@ class MoveQuery:
         return view_name, col_names, srids, geom_types
 
     def create_temporal_view(self, project_title, db, col_id):
-        if self.column_types[col_id] == 'tgeometry':
+        if self.column_types[col_id] in TGEOM_CASTS:
             select_sql = self.get_tgeom_select_sql(col_id)
             view_name = f"move_{project_title}_tgeom_{str(col_id)}_{self.id}"
         else:
@@ -295,8 +312,18 @@ class MoveQuery:
         if cols:
             # add trailing comma if we have additional colums to fetch
             cols = cols + ", "
-        # The segment coordinates are read from tgeompoint values
-        cast = "::tgeompoint" if self.column_types[col_id] == 'tgeogpoint' else ""
+        # The segment coordinates are read from tgeompoint values, and from
+        # the center and radius of tcbuffer values
+        col_type = self.column_types[col_id]
+        cast = TPOINT_CASTS.get(col_type, "")
+        if col_type in TCIRCLE_TYPES:
+            start_point, end_point = "point(startValue(seg))", "point(endValue(seg))"
+            radius_cols = """
+            radius(startValue(seg)) as r0,
+            radius(endValue(seg)) as r1,"""
+        else:
+            start_point, end_point = "startValue(seg)", "endValue(seg)"
+            radius_cols = ""
 
         # One row per segment, from its start value at start_t to its end
         # value at end_t; a step segment has equal start and end values and an
@@ -318,11 +345,11 @@ class MoveQuery:
         select
             row_number() over () as id,
             {cols}
-            st_makeline(startValue(seg), endValue(seg)) as geom,
-            st_x(startValue(seg)) as x0,
-            st_y(startValue(seg)) as y0,
-            st_x(endValue(seg)) as x1,
-            st_y(endValue(seg)) as y1,
+            st_makeline({start_point}, {end_point}) as geom,
+            st_x({start_point}) as x0,
+            st_y({start_point}) as y0,
+            st_x({end_point}) as x1,
+            st_y({end_point}) as y1,{radius_cols}
             startTimestamp(seg) at time zone 'gmt' as start_t,
             endTimestamp(seg) at time zone 'gmt' as end_t,
             lowerInc(seg::tstzspan) as lower_inc,
@@ -374,7 +401,7 @@ class MoveQuery:
         select
             row_number() over () as id,
             {cols}
-            startValue(seg) as geom,
+            startValue(seg){TGEOM_CASTS[self.column_types[col_id]]} as geom,
             startTimestamp(seg) at time zone 'gmt' as start_t,
             endTimestamp(seg) at time zone 'gmt' as end_t
         from segs"""
