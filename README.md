@@ -47,8 +47,9 @@ To refresh the available databases, simply close and re-open the plugin.
 #### Database requirements
 
 To work correctly, the plugin requires these database connections to have their username and password stored.  
-Additionally, to handle the database backend correctly, the plugin needs to be run in a project with a defined title.  
-To define the title of the project, go to Project->Properties->General->Project Title.
+The plugin stores the layers of a query as materialized views in the database, named after an identifier of the QGIS project that the project file keeps.  
+Several projects, of one or several users, can therefore work on the same database, and the views of a saved project are found again when it is reopened.  
+Executing a query drops the views of the project that no layer of the project uses any more.
 
 ### Execute Query
 

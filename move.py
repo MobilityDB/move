@@ -246,13 +246,24 @@ class Move:
             self.dockwidget.button_execute.clicked.connect(self.execute)
             self.dockwidget.button_refresh.clicked.connect(self.refresh)
 
-            self.project_title = QgsProject.instance().title().lower().replace(" ", "_")
             self.setDatabaseComboBox()
 
             # show the dockwidget
             # TODO: fix to allow choice of dock location
             self.iface.addDockWidget(Qt.BottomDockWidgetArea, self.dockwidget)
             self.dockwidget.show()
+
+    # The identifier naming the materialized views of the current project,
+    # stored in the project so that it is kept when the project is saved and
+    # reopened
+    @property
+    def project_id(self):
+        project = QgsProject.instance()
+        project_id, found = project.readEntry('move', 'id', '')
+        if not found or not project_id:
+            project_id = uuid.uuid4().hex[:12]
+            project.writeEntry('move', 'id', project_id)
+        return project_id
 
     def setDatabaseComboBox(self):
         self.dockwidget.combo_database.clear()
@@ -341,7 +352,7 @@ class Move:
             select 'drop materialized view ' || relname || ';'
             from pg_class
             where relkind = 'm'
-            and relname like 'move@_{self.project_title}@_%' escape '@'
+            and relname like 'move@_{self.project_id}@_%' escape '@'
         """
 
         view_names = self.get_layer_view_names()
@@ -389,7 +400,7 @@ class Move:
         self.log("Query return types: " + ", ".join(query.column_types))
         if query.has_geom_columns():
             task = MoveGeomTask("Move: Creating geom view", query,
-                                self.project_title, self.db,
+                                self.project_id, self.db,
                                 self.add_geom_layers, self.raise_error)
             self.tm.addTask(task)
         if query.has_temp_columns():
@@ -397,11 +408,11 @@ class Move:
             for col in temp_cols:
                 if query.column_types[col] in TGEOM_CASTS:
                     task = MoveTTask(f"Move: Creating tgeom view {col}", query,
-                                     self.project_title, self.db, col,
+                                     self.project_id, self.db, col,
                                      self.add_tgeom_layer, self.raise_error)
                 else:
                     task = MoveTTask(f"Move: Creating tpoint view {col}",
-                                     query, self.project_title, self.db, col,
+                                     query, self.project_id, self.db, col,
                                      self.add_tpoint_layer, self.raise_error)
                 self.tm.addTask(task)
 
