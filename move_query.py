@@ -40,6 +40,7 @@ class MoveQuery:
         self.id = uuid.uuid4().hex[:12]
         self.raw_sql = raw_sql
         self.is_valid = True
+        self.returned_no_rows = False
         self.parse_raw_query()
 
     # Parses the query into 7 parts:
@@ -138,6 +139,7 @@ class MoveQuery:
                     self.error_msg = e.diag.message_primary
                 except TypeError:
                     self.error_msg = "Query returned 0 tuples"
+                    self.returned_no_rows = True
                 conn.commit()
         if types is not None:
             self.column_types = types

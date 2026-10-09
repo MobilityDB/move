@@ -66,6 +66,8 @@ This last step might freeze the QGIS window for a moment, but this should only t
 **BE CAREFUL: Writing queries that return millions of lines might crash QGIS.**  
 Use a LIMIT at the end of the query to restrict the amount of features created.
 
+The message bar at the top of the map states the outcome of each query: the layers it created with their number of features, or why it created none, such as an error of the query, a query returning no rows, or a query returning no column the plugin displays.
+
 
 #### PostGIS geometries
 

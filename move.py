@@ -391,6 +391,9 @@ class Move:
             query = MoveQuery(raw_sql)
             if not query.is_valid:
                 self.log(f"Invalid Query: {query}")
+                self.msg("The plugin cannot read the query: it needs a "
+                         "SELECT query that names each of its columns",
+                         Qgis.Warning)
             else:
                 self.log(f"Running Query: {query}")
                 self.run_query(query)
@@ -399,31 +402,81 @@ class Move:
     def run_query(self, query):
         if not query.resolve_types(self.db):
             self.log("Error: " + query.error_msg)
+            if query.returned_no_rows:
+                self.msg("The query returned no rows", Qgis.Warning)
+            else:
+                self.msg(f"The query failed: {query.error_msg}", Qgis.Critical)
             return
         self.log("Query return types: " + ", ".join(query.column_types))
+        if not query.has_geom_columns() and not query.has_temp_columns():
+            self.msg("The query returns no geometry, geography or temporal "
+                     "column to display: " + ", ".join(query.column_types),
+                     Qgis.Warning)
+            return
+        # Tasks of the query still running, reported on when they all ended
+        pending = []
+
+        def finished(add_layers):
+            def run(db, query, params):
+                add_layers(db, query, params)
+                task_ended()
+            return run
+
+        def failed(msg):
+            self.raise_error(msg)
+            task_ended()
+
+        def task_ended():
+            pending.pop()
+            if not pending:
+                self.report_layers(query)
+
+        tasks = []
         if query.has_geom_columns():
-            task = MoveGeomTask("Move: Creating geom view", query,
-                                self.project_id, self.db,
-                                self.add_geom_layers, self.raise_error)
-            self.tm.addTask(task)
+            tasks.append(MoveGeomTask("Move: Creating geom view", query,
+                                      self.project_id, self.db,
+                                      finished(self.add_geom_layers), failed))
         if query.has_temp_columns():
             temp_cols = query.temp_cols()
             for col in temp_cols:
                 if query.column_types[col] in TGEOM_CASTS:
-                    task = MoveTTask(f"Move: Creating tgeom view {col}", query,
-                                     self.project_id, self.db, col,
-                                     self.add_tgeom_layer, self.raise_error)
+                    tasks.append(MoveTTask(
+                        f"Move: Creating tgeom view {col}", query,
+                        self.project_id, self.db, col,
+                        finished(self.add_tgeom_layer), failed))
                 else:
-                    task = MoveTTask(f"Move: Creating tpoint view {col}",
-                                     query, self.project_id, self.db, col,
-                                     self.add_tpoint_layer, self.raise_error)
-                self.tm.addTask(task)
+                    tasks.append(MoveTTask(
+                        f"Move: Creating tpoint view {col}", query,
+                        self.project_id, self.db, col,
+                        finished(self.add_tpoint_layer), failed))
+        pending.extend(tasks)
+        for task in tasks:
+            self.tm.addTask(task)
+
+    # State the layers a query created, found by the identifier of the query
+    # that ends the names of their views
+    def report_layers(self, query):
+        layers = [
+            layer for layer in QgsProject.instance().mapLayers().values()
+            if (layer.customProperty('move/view_name') or '').endswith(
+                f"_{query.id}")
+        ]
+        if not layers:
+            self.msg("The query created no layer", Qgis.Warning)
+            return
+        names = ", ".join(
+            f"{layer.name()} ({layer.featureCount()} features)"
+            for layer in layers)
+        self.msg(f"The query created {len(layers)} layers: {names}",
+                 Qgis.Success)
 
     def raise_error(self, msg):
         if msg:
             self.log("Error: " + msg)
+            self.msg(f"Error: {msg}", Qgis.Critical)
         else:
             self.log("Unknown error")
+            self.msg("Unknown error", Qgis.Critical)
 
     def add_geom_layers(self, db, query, params):
         view_name = params['view_name']
@@ -444,7 +497,7 @@ class Move:
                 layer = self.iface.addVectorLayer(uri.uri(), layer_name,
                                                   "postgres")
                 if not layer or not layer.isValid():
-                    self.msg("Layer failed to load!")
+                    self.msg(f"Layer {layer_name} failed to load", Qgis.Critical)
                 else:
                     layer.setCustomProperty('move/schema', params['schema'])
                     layer.setCustomProperty('move/view_name', view_name)
@@ -462,7 +515,7 @@ class Move:
         layer_name = query.column_names[params['col_id']]
         layer = self.iface.addVectorLayer(uri.uri(), layer_name, "postgres")
         if not layer or not layer.isValid():
-            self.msg("Layer failed to load!")
+            self.msg(f"Layer {layer_name} failed to load", Qgis.Critical)
         else:
             layer.setCustomProperty('move/schema', params['schema'])
             layer.setCustomProperty('move/view_name', view_name)
@@ -518,6 +571,7 @@ class Move:
             if not layer or not layer.isValid():
                 self.log(
                     f"Failed to load layer {layer_name} from view {view_name}")
+                self.msg(f"Layer {layer_name} failed to load", Qgis.Critical)
             else:
                 layer.setCustomProperty('move/schema', params['schema'])
                 layer.setCustomProperty('move/view_name', view_name)
@@ -534,8 +588,8 @@ class Move:
         properties.setStartField('move_start_t')
         properties.setEndField('move_end_t')
 
-    def msg(self, msg):
-        self.iface.messageBar().pushMessage(msg, level=Qgis.Info, duration=3)
+    def msg(self, msg, level=Qgis.Info):
+        self.iface.messageBar().pushMessage(msg, level=level, duration=5)
 
     def log(self, msg):
         QgsMessageLog.logMessage(msg, 'Move', level=Qgis.Info)
