@@ -49,7 +49,9 @@ To refresh the available databases, simply close and re-open the plugin.
 To work correctly, the plugin requires these database connections to have their username and password stored.  
 The plugin stores the layers of a query as materialized views in the database, named after an identifier of the QGIS project that the project file keeps.  
 Several projects, of one or several users, can therefore work on the same database, and the views of a saved project are found again when it is reopened.  
-Executing a query drops the views of the project that no layer of the project uses any more.
+Executing a query drops the views of the project that no layer of the project uses any more.  
+The views are created in the current schema of the connection, the first existing schema of its search path, on which the user needs the CREATE privilege.  
+The tables of the query can be in any schema.
 
 ### Execute Query
 

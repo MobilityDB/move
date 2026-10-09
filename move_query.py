@@ -187,6 +187,9 @@ class MoveQuery:
                 password=db['password']) as conn:
             with conn.cursor() as cur:
                 cur.execute(sql)
+                # The view is created in the current schema of the connection
+                cur.execute("select current_schema()")
+                schema = cur.fetchone()[0]
                 cur.execute(analyze_sql)
                 for col_name in col_names:
                     sql = f"select distinct st_srid({col_name}), geometrytype({col_name}) from {view_name} where {col_name} is not null"
@@ -206,7 +209,7 @@ class MoveQuery:
                     srids.append(col_srids.pop())
                     geom_types.append(col_geom_types)
                 conn.commit()
-        return view_name, col_names, srids, geom_types
+        return schema, view_name, col_names, srids, geom_types
 
     def create_temporal_view(self, project_id, db, col_id):
         if self.column_types[col_id] in TGEOM_CASTS:
@@ -233,6 +236,9 @@ class MoveQuery:
                 password=db['password']) as conn:
             with conn.cursor() as cur:
                 cur.execute(sql)
+                # The view is created in the current schema of the connection
+                cur.execute("select current_schema()")
+                schema = cur.fetchone()[0]
                 cur.execute(srid_sql)
                 srid = cur.fetchone()[0]
                 cur.execute(types_sql)
@@ -245,7 +251,7 @@ class MoveQuery:
                 cur.execute(endt_idx_sql)
                 cur.execute(geom_idx_sql)
                 conn.commit()
-        return view_name, srid, geom_types
+        return schema, view_name, srid, geom_types
 
     def get_full_sql(self):
         sql_parts = []
