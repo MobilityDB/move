@@ -48,6 +48,8 @@ import uuid
 
 from .move_dockwidget import MoveDockWidget
 from .move_query import MoveQuery
+from .move_query import TCIRCLE_TYPES
+from .move_query import TGEOM_CASTS
 from .move_task import MoveGeomTask
 from .move_task import MoveTTask
 
@@ -382,7 +384,7 @@ class Move:
         if query.has_temp_columns():
             temp_cols = query.temp_cols()
             for col in temp_cols:
-                if query.column_types[col] == 'tgeometry':
+                if query.column_types[col] in TGEOM_CASTS:
                     task = MoveTTask(f"Move: Creating tgeom view {col}", query,
                                      self.project_title, self.db, col,
                                      self.add_tgeom_layer, self.raise_error)
@@ -443,19 +445,28 @@ class Move:
                 Qgis.VectorTemporalLimitMode.IncludeBeginIncludeEnd)
             # The point of a segment at the map time, interpolated linearly
             # between its start and end values within the bounds of the
-            # segment; an instant is drawn while the map time range contains it
+            # segment; an instant is drawn while the map time range contains
+            # it; a tcbuffer is the circle around the point with the radius
+            # interpolated in the same way
+            instant = 'make_point("x0", "y0")'
+            moving = 'make_point("x0" + ("x1" - "x0") * @f, "y0" + ("y1" - "y0") * @f)'
+            symbol_type = 'Marker'
+            if query.column_types[params['col_id']] in TCIRCLE_TYPES:
+                instant = f'buffer({instant}, "r0")'
+                moving = f'buffer({moving}, "r0" + ("r1" - "r0") * @f)'
+                symbol_type = 'Fill'
             pointGeneratorLayer = QgsGeometryGeneratorSymbolLayer.create({
                 'SymbolType':
-                'Marker',
+                symbol_type,
                 'geometryModifier':
                 'with_variable(\'t\', epoch(@map_end_time),\n'
                 '  if("end_t" = "start_t",\n'
-                '    make_point("x0", "y0"),\n'
+                f'    {instant},\n'
                 '    if((@t > epoch("start_t") or ("lower_inc" and @t = epoch("start_t")))\n'
                 '        and (@t < epoch("end_t") or ("upper_inc" and @t = epoch("end_t"))),\n'
                 '      with_variable(\'f\',\n'
                 '        (@t - epoch("start_t")) / (epoch("end_t") - epoch("start_t")),\n'
-                '        make_point("x0" + ("x1" - "x0") * @f, "y0" + ("y1" - "y0") * @f)),\n'
+                f'        {moving}),\n'
                 '      NULL)))'
             })
             layer.renderer().symbol().changeSymbolLayer(0, pointGeneratorLayer)
